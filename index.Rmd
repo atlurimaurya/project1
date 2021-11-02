@@ -1,0 +1,112 @@
+---
+title: 'Project 1: Wrangling, Exploration, Visualization'
+author: "SDS322E"
+date: ''
+output:
+  html_document:
+    toc: yes
+    toc_float:
+      collapsed: no
+      smooth_scroll: yes
+  pdf_document:
+    toc: no
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = TRUE, fig.align = "center", warning = F, message = F,
+tidy=TRUE, tidy.opts=list(width.cutoff=60), R.options=list(max.print=100))
+```
+
+## Data Wrangling, Exploration, Visualization
+
+### Maurya Atluri ma57744
+
+#### Introduction 
+
+The first dataset is a dataset of tv shows from IMDB, with its important variables being the title, which is shared with the second dataset, and EpisodeDuration, Genres, Rating, and Years. The rating and year columns will be dropped due to being shared with the second data set as well, and a few other columns will be dropped due to being less useful to this project such as the about field in this dataset. The second dataset is a dataset of TV shows on Netflix, Prime Video, Disney+, and Hulu, and will have the shared variable of Title, and some of its important variables being the Year, IMDb, Rotten Tomatoes, and the variables for wether it is in a certain streaming service or not.
+
+These datasets are interesting to me as I am interested in how some of these variables are associated with a given shows reception, and especially curious to know how the reception of shows on different streaming services differs.
+
+```{R}
+library(dplyr)
+library(tidyverse)
+imdb <- read_csv("imdb_tvshows.csv")
+streaming <- read_csv("tv_shows.csv")
+glimpse(imdb)
+glimpse(streaming)
+imdb %>% select(-About, -Genres, -Actors, -Rating, -Years) %>% rename_with(tolower) %>% rename(duration = 'episodeduration(in minutes)') -> imdb
+streaming %>% select(-X1, -ID, -Type) %>% rename_with(tolower) %>% rename(rotten_tomatoes = 'rotten tomatoes', prime_video = 'prime video', disney_plus = 'disney+') -> streaming
+glimpse(imdb)
+glimpse(streaming)
+```
+
+#### Tidying: Reshaping
+
+Untidied with pivot_longer and retidied with pivot_wider to demonstrate that I can reshape data. Untidied by combining the spearate columns for the streaming services into a column containing the streaming service and a column with wether a show was available on the streaming service so there were four columns for each show. I then retidied the dataset using the streaming column as the names for the columns and the column showing availability for the values of those columns again. The streaming services must be their own variables because it is possible for a tv show to appear in more than one streaming service.
+
+```{R}
+streaming %>% pivot_longer(6:9, names_to="service", values_to="available") -> streaming
+glimpse(streaming)
+streaming %>% pivot_wider(names_from = service, values_from = available) -> streaming
+glimpse(streaming)
+```
+
+    
+#### Joining/Merging
+
+```{R}
+inner_join(imdb, streaming, by="title") -> tv_shows
+glimpse(tv_shows)
+nrow(imdb)
+nrow(streaming)
+nrow(imdb) - nrow(tv_shows)
+nrow(streaming) - nrow(tv_shows)
+nrow(tv_shows)
+```
+
+I did an inner join of the two datasets on title as that is the main identifier for both of the datasets, and used an inner join because I only want entries that have entries in both datasets to avoid missing values. This creates the new joined dataset, tv_shows. The imdb dataset had 3000 rows, and the streaming dataset had 5368 rows. The unique IDs in both of the datasets is only the title, so the number of those is the same as the number of rows for both of the datasets. There are 1793 IDs that appear in the imdb dataset that do not appear in the streaming dataset, and 4161 rows that appear in the streaming dataset that do not appear in the imdb dataset. There are 1207 IDs that the datasets have in common. The new dataset, tv_shows has only 1207 rows compared to 3000 from the imdb dataset and 5368 from the streaming dataset which is significantly smaller due to many shows in the imdb dataset not on streaming and many shows on streaming not found in the imdb dataset, with 4161 rows dropped from the streaming dataset, this project may have potential problems of being unrepresentative of the streaming services as a whole due to only using a subset of the shows available on streaming services, and likely a subset including predominantly the more well known of the tv shows available on streaming services.
+
+####  Wrangling
+
+```{R}
+tv_shows %>% mutate(age = str_replace(age, 'all', '0+'))  %>% mutate(age = str_replace(age, '13+', '16+')) %>% mutate(age = replace_na(age, '0+')) %>% mutate(age = str_replace(age, '[+]', '')) %>% mutate(imdb = str_replace(imdb, '[?:\\/](?:\\d+)', '')) %>% mutate(rotten_tomatoes = str_replace(rotten_tomatoes, '[?:\\/](?:\\d+)', '')) %>% mutate(year = as.factor(year)) %>%  mutate(age = as.numeric(age)) %>%  mutate(imdb = as.numeric(imdb)) %>%  mutate(rotten_tomatoes = as.numeric(rotten_tomatoes)) %>% na.omit %>% mutate(duration_hours = duration/60) %>% relocate(duration_hours, .after=duration) -> tv_shows
+glimpse(tv_shows)
+tv_shows %>% filter(netflix == 1) %>% nrow()
+tv_shows %>% filter(hulu == 1) %>% nrow()
+tv_shows %>% filter(prime_video == 1) %>% nrow()
+tv_shows %>% filter(disney_plus == 1) %>% nrow()
+
+average_score <- function(imdb, rotten_tomatoes) {
+  ((imdb * 10) + rotten_tomatoes)/2
+}
+tv_shows %>% select(1:8) %>% select_if(is.numeric) %>% summarise_all(list(mean = mean, sd = sd, var = var, min = min, max = max))
+tv_shows %>% pivot_longer(9:12, names_to="service", values_to="available") %>% filter(available == 1) %>% select(-available) -> longer_tv_shows
+longer_tv_shows %>% group_by(service) %>% summarise(mean_duration = mean(duration), mean_duration_hours = mean(duration_hours), mean_imdb = mean(imdb), mean_rt = mean(rotten_tomatoes), mean_average_score = average_score(mean_imdb, mean_rt), count = n()) %>% arrange(desc(mean_average_score))
+tv_shows %>% group_by(year) %>% summarise(mean_duration = mean(duration), mean_duration_hours = mean(duration_hours), mean_imdb = mean(imdb), mean_rt = mean(rotten_tomatoes), mean_average_score = average_score(mean_imdb, mean_rt), count = n()) %>% arrange(desc(mean_average_score)) %>% filter(count > 5)
+longer_tv_shows %>% group_by(service, year) %>% summarise(mean_duration = mean(duration), mean_duration_hours = mean(duration_hours),mean_imdb = mean(imdb), mean_rt = mean(rotten_tomatoes), mean_average_score = average_score(mean_imdb, mean_rt), count = n()) %>% arrange(desc(mean_average_score)) %>% filter(count > 5)
+```
+
+I started off modifying the data age and ratings columns to make them numeric and changing the year column to a factor. I then started off by looking at the number of shows in the dataset that each streaming service had available, and found that netflix and hull had a similar number near 500 for both, while prime_video had 247 and disney_plus only had 87. My first summary table summarised the mean, standard deviation, variance, minimum and maximum for all of the numeric values, which is nice to be able to see how the the numeric data varies and how it may be distributed. I then went on to create summary statistics grouping by streaming service, which I pivot longered the data set to make easier, and found the mean duration of an episode, and the mean of both imdb score, rotten tomatoes score, and an average score which I used a function I created to find the average score of the two scores by first multiplying the imdb score by 10 to put it on the same scale as the rotten tomatoes score. I computed the same summary statistics grouping by year, and then also grouping by year and streaming service together. One of the most interesting results was that prime_video, netflix, and hulu all had similar summary statistics while disney_plus had those significantly lower than those of the other services. I also found that the summary statistics when grouping by year were harder to have certainty in finding wise due to the low counts in many of the years causing the data to likely be unrepresentative of the population. After filtering out low count years I found that 2015 and 2004 had the highest average scores, while 2006 had the worst.
+
+
+#### Visualizing
+
+```{R}
+tv_shows %>% mutate(age = as.factor(age)) %>% mutate(average_score = average_score(imdb, rotten_tomatoes)) %>% ggplot(aes(age, average_score)) + labs(title = "Average Score of Shows by Minimum Age Rating", x='Minimum Age Rating', y='Average Rating of Shows', breaks = 10) + geom_bar(stat = "summary", fun = "mean", aes(fill = age))  + scale_fill_brewer(palette = "Set1") + ylim(0,100) + geom_errorbar(stat = "summary", width = .5)
+```
+
+This plot visualizes the relationship between the minimum age rating of a show with its average rating, and a visible trend is that the average rating tends to go up as the minimum age rating rises, which I am not surprised by as I have found that quality of tv shows increases significantly when made for an older audience. 
+
+```{R}
+longer_tv_shows %>% mutate(average_score = average_score(imdb, rotten_tomatoes)) %>% ggplot(aes(average_score)) + labs(title = "Distribution of Average Scores by Streaming Service", x='Average Score', y='Frequency', breaks = 10) + facet_grid(service~., scales="free_y")  + geom_histogram(binwidth = 2.5, aes(fill = service)) + geom_density(aes(y=2.5 * ..count..)) + scale_fill_brewer(palette = "Set2") + xlim(0,100)
+```
+
+This plot visualizes the distribution of average_score for each of the streaming services, and a visible trend is that hulu, netflix, and prime_video have relatively similar distributions around similar centers, while the disney_plus distribution has its center at a lower average_score and overall has a higher number of low score shows.
+```{R}
+tv_shows %>% ggplot(aes(imdb, rotten_tomatoes)) + geom_point() + geom_smooth(method="lm",aes(color = year)) + xlim(0,10) + ylim(0,100) + scale_fill_brewer(palette = "Set3")
+```
+
+This plot shows the relationship between imdb score and rotten_tomatoes score, and we can visually see that there is a strong positive relationship, and from the way that trendlines are separated by year, we can see that this trend does not seem to change significantly year to year with a few exceptions(few movies in recent years due to covid), with a similar trendline with small variations throughout years.
+
+
+
